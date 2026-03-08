@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import confusion_matrix, accuracy_score
@@ -60,10 +59,8 @@ class BayesianAnalyzer:
         X_raw = df_clean[feature_cols]
         y = df_clean[self.target_col]
 
-        # 2. Validación de tipos (Evita crashes de Scikit-Learn)
         X = self._validate_and_prepare_X(X_raw)
 
-        # 3. Split con estratificación para mantener balance de clases
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.3, random_state=self.random_state, stratify=y
         )
@@ -71,7 +68,6 @@ class BayesianAnalyzer:
         self.model.fit(X_train, y_train)
         y_pred = self.model.predict(X_test)
 
-        # Exposición de probabilidades (Útil para calibración futura o IA)
         y_prob = self.model.predict_proba(X_test)
 
         cm = confusion_matrix(y_test, y_pred)
@@ -90,7 +86,6 @@ class BayesianAnalyzer:
             "matriz_confusion": cm,
             "sensibilidad": sensibilidad,
             "especificidad": especificidad,
-            # Guardamos una muestra para el JSON de la IA
             "y_prob_sample": y_prob[:5].tolist(),
             "clases_detectadas": self.model.classes_.tolist()
         }

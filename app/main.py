@@ -11,10 +11,8 @@ st.set_page_config(page_title="Bayesian Engine | Zero Trust", layout="wide")
 
 
 @st.cache_data(ttl=600)
-def cached_detect_column_types(df_json):
-    # Usamos JSON temporalmente como hash para el cache
-    df_reconstructed = pd.read_json(df_json)
-    return detect_column_types(df_reconstructed)
+def cached_detect_column_types(df):
+    return detect_column_types(df)
 
 
 st.title("🛡️ Motor de Inferencia Bayesiana")
@@ -26,13 +24,12 @@ with st.sidebar:
 
 if uploaded_file is not None:
     try:
-        # Carga delegada. Capturamos la excepción aquí, no en el módulo.
         df = load_and_validate_data(uploaded_file)
         st.success("CSV montado en memoria exitosamente.")
 
         st.header("2. Escaneo de Superficie")
-        # Usamos cache para optimizar rendimiento
-        col_types = cached_detect_column_types(df.to_json())
+
+        col_types = cached_detect_column_types(df)
 
         with st.expander("Ver mapa de tipos de datos detectados", expanded=False):
             st.json(col_types)
@@ -45,7 +42,7 @@ if uploaded_file is not None:
                     "Selecciona variable para Histograma", col_types["numericas"])
                 fig_hist = plot_histogram(df, hist_col)
                 st.pyplot(fig_hist)
-                plt.close(fig_hist)  # Mitigación de Memory Leak
+                plt.close(fig_hist)
 
             with col_eda2:
                 if col_types["fechas"]:
@@ -54,7 +51,7 @@ if uploaded_file is not None:
                     fig_time = plot_time_series(df, date_col, hist_col)
                     if fig_time:
                         st.pyplot(fig_time)
-                        plt.close(fig_time)  # Mitigación de Memory Leak
+                        plt.close(fig_time)
                 else:
                     st.info("No se detectaron vectores de tiempo (datetime).")
 
@@ -70,7 +67,6 @@ if uploaded_file is not None:
                 target_col = st.selectbox(
                     "Selecciona la Variable Objetivo (A)", possible_targets)
             with col2:
-                # Ordenar las clases para mantener determinismo visual
                 classes_sorted = sorted(
                     df[target_col].dropna().unique(), key=lambda x: str(x))
                 target_value = st.selectbox(
@@ -115,7 +111,7 @@ if uploaded_file is not None:
             fig_bayes = plot_probability_comparison(
                 prior_a, posterior, target_value)
             st.pyplot(fig_bayes)
-            plt.close(fig_bayes)  # Mitigación de Memory Leak
+            plt.close(fig_bayes)
 
             st.markdown("---")
             st.header("5. Clasificador Naïve Bayes (GaussianNB)")
@@ -145,8 +141,7 @@ if uploaded_file is not None:
                         fig_cm = plot_confusion_matrix(
                             metrics['matriz_confusion'], classes=classes_labels)
                         st.pyplot(fig_cm)
-                        plt.close(fig_cm)  # Mitigación de Memory Leak
-
+                        plt.close(fig_cm)
                         st.session_state['last_metrics'] = metrics
 
                     except ValueError as e:
@@ -156,7 +151,7 @@ if uploaded_file is not None:
                         st.error(f"Falla crítica en el entrenamiento: {e}")
 
     except DataLoadError as e:
-        st.error(str(e))  # Atrapamos el error personalizado de data_loader
+        st.error(str(e))
 
 else:
     st.info(
