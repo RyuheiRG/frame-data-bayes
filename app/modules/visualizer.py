@@ -11,7 +11,11 @@ def plot_histogram(df: pd.DataFrame, column: str):
             f"Vulnerabilidad: La columna {column} no es numérica.")
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    sns.histplot(data=df, x=column, kde=True, ax=ax, color="#4CAF50")
+    # Eliminamos el overhead de KDE en datasets enormes para evitar tirones
+    plot_kde = len(df[column].dropna()) < 5000
+
+    sns.histplot(data=df, x=column, kde=plot_kde,
+                 ax=ax, color="#4CAF50", bins='auto')
     ax.set_title(f"Distribución de Densidad: {column}")
     ax.set_ylabel("Frecuencia")
     plt.tight_layout()
@@ -20,13 +24,13 @@ def plot_histogram(df: pd.DataFrame, column: str):
 
 def plot_probability_comparison(prior: float, posterior: float, target_name: str):
     fig, ax = plt.subplots(figsize=(6, 4))
-    labels = [f'P({target_name}) Base', f'P({target_name} | Evidencia)']
+    labels = [f'Prior Base', f'Posterior (Con Evidencia)']
     values = [prior, posterior]
 
     bars = ax.bar(labels, values, color=['#757575', '#1976D2'])
     ax.set_ylim(0, 1.1)
     ax.set_ylabel('Probabilidad')
-    ax.set_title('Desplazamiento Bayesiano (Prior vs Posterior)')
+    ax.set_title(f'Desplazamiento Bayesiano para {target_name}')
 
     for bar in bars:
         yval = bar.get_height()
@@ -41,9 +45,9 @@ def plot_confusion_matrix(cm: np.ndarray, classes: list = None):
     fig, ax = plt.subplots(figsize=(8, 6))
 
     if classes is None:
-        classes = ["Negativo (0)", "Positivo (1)"]
+        classes = ["Negativo", "Positivo"]
     else:
-        classes = [textwrap.fill(str(c), width=20) for c in classes]
+        classes = [textwrap.fill(str(c), width=15) for c in classes]
 
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
                 xticklabels=classes, yticklabels=classes, ax=ax,
@@ -64,14 +68,24 @@ def plot_time_series(df: pd.DataFrame, date_col: str, feature_col: str):
         return None
     if not pd.api.types.is_numeric_dtype(df[feature_col]):
         raise ValueError(
-            f"La variable a graficar en el tiempo ({feature_col}) debe ser numérica.")
+            f"La variable a graficar ({feature_col}) debe ser numérica.")
 
     fig, ax = plt.subplots(figsize=(10, 4))
-    df_sorted = df.sort_values(by=date_col)
+    df_sorted = df.dropna(
+        subset=[date_col, feature_col]).sort_values(by=date_col)
 
-    sns.lineplot(data=df_sorted, x=date_col,
-                 y=feature_col, ax=ax, color="#FF9800")
-    ax.set_title(f"Evolución Temporal: {feature_col} a lo largo de {date_col}")
+    # MITIGACIÓN DE PERFORMANCE: Downsampling para Series de Tiempo gigantes
+    MAX_POINTS_UI = 2000
+    if len(df_sorted) > MAX_POINTS_UI:
+        step = len(df_sorted) // MAX_POINTS_UI
+        df_sorted = df_sorted.iloc[::step]
+        ax.set_title(
+            f"Evolución: {feature_col} (Submuestreo estricto a {MAX_POINTS_UI} pts)")
+    else:
+        ax.set_title(f"Evolución Temporal: {feature_col} vs {date_col}")
+
+    sns.lineplot(data=df_sorted, x=date_col, y=feature_col,
+                 ax=ax, color="#FF9800", linewidth=1.5)
     plt.xticks(rotation=45)
     plt.tight_layout()
     return fig
