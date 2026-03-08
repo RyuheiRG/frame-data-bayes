@@ -1,22 +1,5 @@
-# Entornos virtuales y variables de entorno
-venv/
-.env
+#modules
+node_modules/
 
-# Cachés y binarios compilados de Python
-__pycache__/
-*.py[cod]
-*$py.class
-.pytest_cache/
-
-# Entornos interactivos
-.ipynb_checkpoints/
-
-# Datos (Aislamiento de superficie)
-data/raw/*.csv
-data/raw/*.xlsx
-data/processed/*.csv
-
-# Archivos de SO y editores
-.DS_Store
-Thumbs.db
-.vscode/
+#package
+package-lock.json
