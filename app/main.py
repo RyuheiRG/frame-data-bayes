@@ -12,6 +12,10 @@ from modules.insights import (
     top_correlated_pairs,
     target_group_stats,
     mutual_info_scores,
+    best_variable_by_mutual_info,
+    event_rarity,
+    independence_by_correlation,
+    model_reliability_estimate,
 )
 
 st.set_page_config(page_title="Bayesian Engine | Zero Trust", layout="wide")
@@ -176,47 +180,44 @@ if uploaded_file is not None:
         st.markdown("---")
         st.header("6. Insights Estadísticos")
 
-        if col_types["numericas"]:
-            with st.expander("Resumen descriptivo de variables numéricas", expanded=False):
-                desc = summary_statistics(df, col_types["numericas"])
-                st.dataframe(desc)
-
-            with st.expander("Mapa de correlaciones (numéricas)", expanded=False):
-                fig_corr = plot_correlation_heatmap(df, col_types["numericas"]) 
-                if fig_corr:
-                    st.pyplot(fig_corr)
-                    plt.close(fig_corr)
-
-            with st.expander("Valores faltantes (top columns)", expanded=False):
-                fig_miss = plot_missingness_bar(df)
-                st.pyplot(fig_miss)
-                plt.close(fig_miss)
-
-            with st.expander("Top correlaciones absolutas", expanded=False):
-                corr_mat = correlation_matrix(df, col_types["numericas"]) 
-                top_corr = top_correlated_pairs(corr_mat, n=15)
-                st.table(top_corr)
-        else:
-            st.info("No hay variables numéricas detectadas para generar insights generales.")
-
-        with st.expander("Insights vs Target (estadísticas por clase e importancia)", expanded=False):
-            if 'target_col' in locals() and target_col:
-                if col_types["numericas"]:
-                    tg = target_group_stats(df, col_types["numericas"], target_col)
-                    if not tg.empty:
-                        st.subheader("Estadísticas por clase (media, std, count)")
-                        st.dataframe(tg)
-
-                    st.subheader("Top Features por Mutual Information")
-                    mi = mutual_info_scores(df, col_types["numericas"], target_col)
-                    if not mi.empty:
-                        st.table(mi.head(15))
-                    else:
-                        st.info("No hay suficiente información para calcular scores de información mutua.")
-                else:
-                    st.info("No hay variables numéricas detectadas para calcular insights vs target.")
+        # Pregunta 1: ¿Qué variable aporta más información?
+        if 'target_col' in locals() and target_col and col_types["numericas"]:
+            best_var, best_score = best_variable_by_mutual_info(df, col_types["numericas"], target_col)
+            if best_var:
+                st.write(f"1) Variable que más aporta: **{best_var}** (info mutua ≈ {best_score:.4f})")
             else:
-                st.info("No se ha seleccionado un target válido para calcular insights por clase.")
+                st.write("1) No se pudo calcular variable con información (datos insuficientes).")
+        else:
+            st.write("1) No hay target o variables numéricas suficientes para evaluar aporte de información.")
+
+        # Pregunta 2: ¿El evento es raro?
+        if 'target_col' in locals() and target_col:
+            prior, rarity = event_rarity(df, target_col, target_value)
+            st.write(f"2) ¿El evento es raro? -> Probabilidad base = {prior:.4f} → **{rarity}**")
+        else:
+            st.write("2) No se ha seleccionado un target válido para evaluar rareza.")
+
+        # Pregunta 3: ¿Las variables parecen independientes?
+        ind = independence_by_correlation(df, col_types.get("numericas", []))
+        if ind.get('mean_abs_corr') is None:
+            st.write("3) No aplicable (menos de 2 variables numéricas).")
+        else:
+            st.write(f"3) Correlación media absoluta = {ind['mean_abs_corr']:.3f}, max = {ind['max_abs_corr']:.3f} → {ind['conclusion']}")
+
+        # Pregunta 4: ¿Qué tan confiable es el modelo?
+        reliability = model_reliability_estimate(df, col_types.get("numericas", []), target_col if 'target_col' in locals() else None)
+        baseline = reliability.get('baseline_accuracy')
+        nb_acc = reliability.get('nb_cv_accuracy')
+        note = reliability.get('note')
+        if baseline is None and nb_acc is None:
+            st.write(f"4) Confiabilidad: No se puede estimar. {note or ''}")
+        else:
+            s = f"4) Baseline (mayoría) = {baseline:.3f}" if baseline is not None else "4) Baseline no disponible"
+            if nb_acc is not None:
+                s += f"; Estimación NaïveBayes (CV) ≈ {nb_acc:.3f}"
+            if note:
+                s += f" — {note}"
+            st.write(s)
 
     except DataLoadError as e:
         st.error(str(e))
