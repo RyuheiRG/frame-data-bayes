@@ -2,12 +2,14 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import streamlit as st
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.naive_bayes import GaussianNB
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import LabelEncoder
 
 
+@st.cache_data(show_spinner=False)
 def summary_statistics(df: pd.DataFrame, numeric_cols: list) -> pd.DataFrame:
     if not numeric_cols:
         return pd.DataFrame()
@@ -17,18 +19,21 @@ def summary_statistics(df: pd.DataFrame, numeric_cols: list) -> pd.DataFrame:
     return desc
 
 
+@st.cache_data(show_spinner=False)
 def missingness_summary(df: pd.DataFrame) -> pd.DataFrame:
     s = df.isna().sum()
     pct = s / len(df)
     return pd.DataFrame({'missing_count': s, 'missing_pct': pct})
 
 
+@st.cache_data(show_spinner=False)
 def correlation_matrix(df: pd.DataFrame, numeric_cols: list, method: str = 'pearson') -> pd.DataFrame:
     if not numeric_cols:
         return pd.DataFrame()
     return df[numeric_cols].corr(method=method)
 
 
+@st.cache_data(show_spinner=False)
 def top_correlated_pairs(corr: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     if corr.empty:
         return pd.DataFrame(columns=['feature_a', 'feature_b', 'abs_corr'])
@@ -47,8 +52,8 @@ def plot_correlation_heatmap(df: pd.DataFrame, numeric_cols: list, method: str =
         return None
     corr = correlation_matrix(df, numeric_cols, method)
     fig, ax = plt.subplots(figsize=(8, 6))
-    sns.heatmap(corr, annot=False, cmap='coolwarm', ax=ax,
-                cbar_kws={'shrink': .6})
+    sns.heatmap(corr, annot=False, cmap='coolwarm',
+                ax=ax, cbar_kws={'shrink': .6})
     ax.set_title(f"Mapa de Correlaciones ({method})")
     plt.tight_layout()
     return fig
@@ -58,35 +63,45 @@ def plot_missingness_bar(df: pd.DataFrame):
     miss = missingness_summary(df)
     fig, ax = plt.subplots(figsize=(8, 4))
     miss_sorted = miss.sort_values('missing_pct', ascending=False).head(30)
-    ax.bar(miss_sorted.index.astype(str), miss_sorted['missing_pct'], color='#E53935')
+    ax.bar(miss_sorted.index.astype(str),
+           miss_sorted['missing_pct'], color='#E53935')
     ax.set_ylabel('Porcentaje faltante')
     ax.set_xticklabels(miss_sorted.index.astype(str), rotation=45, ha='right')
-    ax.set_title('Porcentaje de valores faltantes por columna (top 30)')
+    ax.set_title('Valores faltantes por columna (top 30)')
     plt.tight_layout()
     return fig
 
 
+@st.cache_data(show_spinner=False)
 def target_group_stats(df: pd.DataFrame, numeric_cols: list, target_col: str) -> pd.DataFrame:
     if target_col not in df.columns or not numeric_cols:
         return pd.DataFrame()
-    grouped = df.groupby(target_col)[numeric_cols].agg(['mean', 'std', 'count'])
+    grouped = df.groupby(target_col)[numeric_cols].agg(
+        ['mean', 'std', 'count'])
     grouped.columns = ['_'.join(col).strip() for col in grouped.columns.values]
     return grouped
 
 
+@st.cache_data(show_spinner=False)
 def mutual_info_scores(df: pd.DataFrame, numeric_cols: list, target_col: str) -> pd.Series:
     clean = df.dropna(subset=numeric_cols + [target_col])
     if clean.empty or not numeric_cols:
         return pd.Series(dtype=float)
     X = clean[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
     y = clean[target_col]
+
+    if y.dtype == 'object' or y.dtype.name == 'category':
+        y = LabelEncoder().fit_transform(y.astype(str))
+
     try:
-        mi = mutual_info_classif(X, y, discrete_features=False, random_state=42)
+        mi = mutual_info_classif(
+            X, y, discrete_features=False, random_state=42)
         return pd.Series(mi, index=numeric_cols).sort_values(ascending=False)
     except Exception:
         return pd.Series(dtype=float)
 
 
+@st.cache_data(show_spinner=False)
 def best_variable_by_mutual_info(df: pd.DataFrame, numeric_cols: list, target_col: str):
     mi = mutual_info_scores(df, numeric_cols, target_col)
     if mi.empty:
@@ -95,73 +110,77 @@ def best_variable_by_mutual_info(df: pd.DataFrame, numeric_cols: list, target_co
     return top, float(mi.loc[top])
 
 
-def event_rarity(df: pd.DataFrame, target_col: str, target_value) -> (float, str):
+@st.cache_data(show_spinner=False)
+def event_rarity(df: pd.DataFrame, target_col: str, target_value) -> tuple:
     clean = df.dropna(subset=[target_col])
     if clean.empty:
-        return 0.0, "sin datos"
+        return 0.0, "Sin datos suficientes"
     prior = len(clean[clean[target_col] == target_value]) / len(clean)
     if prior <= 0.01:
-        label = "Extremadamente raro"
+        label = "Extremadamente raro (<1%)"
     elif prior <= 0.05:
-        label = "Raro"
+        label = "Raro (<5%)"
     elif prior <= 0.2:
-        label = "Poco frecuente"
+        label = "Poco frecuente (<20%)"
     else:
-        label = "Común"
+        label = "Común (>20%)"
     return prior, label
 
 
+@st.cache_data(show_spinner=False)
 def independence_by_correlation(df: pd.DataFrame, numeric_cols: list) -> dict:
     if not numeric_cols or len(numeric_cols) < 2:
-        return {"mean_abs_corr": None, "max_abs_corr": None, "conclusion": "No aplicable (menos de 2 variables numéricas)"}
+        return {"mean_abs_corr": None, "max_abs_corr": None, "conclusion": "N/A (Faltan variables numéricas)"}
     corr = correlation_matrix(df, numeric_cols).abs()
-    # ignore diagonal
     vals = corr.where(~np.eye(corr.shape[0], dtype=bool)).stack().values
     if len(vals) == 0:
-        return {"mean_abs_corr": 0.0, "max_abs_corr": 0.0, "conclusion": "No hay correlaciones calculables"}
+        return {"mean_abs_corr": 0.0, "max_abs_corr": 0.0, "conclusion": "Sin correlaciones calculables"}
+
     mean_abs = float(np.nanmean(vals))
     max_abs = float(np.nanmax(vals))
+
     if mean_abs < 0.1:
-        conclusion = "Las variables parecen mayormente independientes (correlación baja en promedio)."
+        conclusion = "Variables mayormente independientes (Correlación media muy baja)."
     elif mean_abs < 0.3:
-        conclusion = "Existe dependencia moderada entre variables."
+        conclusion = "Dependencia moderada entre variables."
     else:
-        conclusion = "Las variables muestran dependencia notable (correlaciones elevadas)."
+        conclusion = "Dependencia notable (Alto riesgo de multicolinealidad para Naive Bayes)."
+
     return {"mean_abs_corr": mean_abs, "max_abs_corr": max_abs, "conclusion": conclusion}
 
 
+@st.cache_data(show_spinner=False)
 def model_reliability_estimate(df: pd.DataFrame, numeric_cols: list, target_col: str) -> dict:
-    # Devuelve baseline (mayoría) y una estimación de accuracy de Naive Bayes vía cross-val
     res = {"baseline_accuracy": None, "nb_cv_accuracy": None, "note": None}
     clean = df.dropna(subset=numeric_cols + [target_col])
     if clean.empty or not numeric_cols:
-        res["note"] = "Datos insuficientes para estimar confiabilidad."
+        res["note"] = "Datos insuficientes para validar."
         return res
 
     y = clean[target_col]
-    # baseline: proporción de la clase mayoritaria
     try:
         counts = y.value_counts(normalize=True)
         res["baseline_accuracy"] = float(counts.iloc[0])
     except Exception:
-        res["note"] = "No se pudo calcular baseline."
+        res["note"] = "Fallo al calcular Baseline."
 
     X = clean[numeric_cols].apply(pd.to_numeric, errors='coerce').fillna(0)
-    # label-encode target if needed
+
     if y.dtype == 'object' or y.dtype.name == 'category':
         y_enc = LabelEncoder().fit_transform(y.astype(str))
     else:
         y_enc = y.values
 
     if len(clean) < 10 or len(np.unique(y_enc)) < 2:
-        res["note"] = "Muestra insuficiente o target mono-clase para CV."
+        res["note"] = "Target mono-clase o varianza insuficiente para Cross-Validation."
         return res
 
     try:
         nb = GaussianNB()
-        scores = cross_val_score(nb, X, y_enc, cv=5, scoring='accuracy')
+        scores = cross_val_score(
+            nb, X, y_enc, cv=5, scoring='accuracy', n_jobs=-1)
         res["nb_cv_accuracy"] = float(np.mean(scores))
-    except Exception:
-        res["note"] = "Fallo en evaluación CV (posible tipo de dato o tamaño)."
+    except Exception as e:
+        res["note"] = f"Error CV: {str(e)[:50]}..."
 
     return res

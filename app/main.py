@@ -1,27 +1,16 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
-from modules.data_loader import load_and_validate_data, detect_column_types, DataLoadError
-from modules.bayes_engine import BayesianAnalyzer
-from modules.visualizer import plot_histogram, plot_probability_comparison, plot_confusion_matrix, plot_time_series
-from modules.insights import (
-    summary_statistics,
-    plot_correlation_heatmap,
-    plot_missingness_bar,
-    correlation_matrix,
-    top_correlated_pairs,
-    target_group_stats,
-    mutual_info_scores,
-    best_variable_by_mutual_info,
-    event_rarity,
-    independence_by_correlation,
-    model_reliability_estimate,
+from data.data_loader import load_and_validate_data, detect_column_types, DataLoadError
+from models.bayes_engine import BayesianAnalyzer
+from visualization.visualizer import plot_histogram, plot_probability_comparison, plot_confusion_matrix, plot_time_series
+from analytics.insights import (
+    plot_correlation_heatmap, plot_missingness_bar,
+    best_variable_by_mutual_info, event_rarity,
+    independence_by_correlation, model_reliability_estimate
 )
 
 st.set_page_config(page_title="Bayesian Engine | Zero Trust", layout="wide")
-
-# --- OPTIMIZACIÓN CRÍTICA: CACHING DE I/O ---
-# Almacenamos el DF en memoria para evitar relecturas destructivas.
 
 
 @st.cache_data(show_spinner="Desencriptando e ingiriendo payload...", ttl=3600)
@@ -46,18 +35,16 @@ with st.sidebar:
 
 if uploaded_file is not None:
     try:
-        # Usamos la función cacheada. Streamlit hashea el archivo para saber si cambió.
         df = cached_load_data(uploaded_file)
         st.sidebar.success(
             f"CSV montado en memoria: {df.shape[0]} filas, {df.shape[1]} dims.")
 
-        st.header("2. Escaneo de Superficie")
+        st.header("2. Escaneo de Superficie y EDA")
         col_types = cached_detect_column_types(df)
 
         with st.expander("Ver mapa de tipos de datos detectados", expanded=False):
             st.json(col_types)
 
-        st.subheader("Análisis Exploratorio (EDA)")
         if col_types["numericas"]:
             col_eda1, col_eda2 = st.columns(2)
             with col_eda1:
@@ -65,7 +52,7 @@ if uploaded_file is not None:
                     "Selecciona variable para Histograma", col_types["numericas"])
                 fig_hist = plot_histogram(df, hist_col)
                 st.pyplot(fig_hist)
-                plt.close(fig_hist)  # Prevención de Memory Leak (OOM)
+                plt.close(fig_hist)
 
             with col_eda2:
                 if col_types["fechas"]:
@@ -78,15 +65,14 @@ if uploaded_file is not None:
                 else:
                     st.info("No se detectaron vectores de tiempo (datetime).")
 
-        st.header("4. Configuración del Objetivo (Target)")
-        # Evitamos mezclar listas directamente, casteamos a set por seguridad de duplicados
+        st.header("3. Configuración del Objetivo (Target)")
         possible_targets = list(
             set(col_types["binarias"] + col_types["categoricas"]))
 
         if not possible_targets:
             st.error(
                 "Vector de falla: No se detectaron columnas válidas para usar como objetivo.")
-            st.stop()  # Corta la ejecución para no generar excepciones en cascada
+            st.stop()
 
         col1, col2 = st.columns(2)
         with col1:
@@ -98,10 +84,7 @@ if uploaded_file is not None:
             target_value = st.selectbox(
                 "Selecciona la clase positiva (Evento Anómalo)", classes_sorted)
 
-        # Instanciar el motor lógico
         engine = BayesianAnalyzer(df, target_col)
-
-        pass
 
         st.markdown("---")
         st.header("4. Motor Probabilístico (Teorema de Bayes)")
@@ -118,7 +101,6 @@ if uploaded_file is not None:
             umbral = st.number_input(
                 f"Umbral: {evidence_col} > X", value=float(df[evidence_col].mean()))
 
-        # Clausura (closure) para la condición lógica
         def condition(x): return x > umbral
 
         prob_b_given_a = engine.calculate_conditional(
@@ -176,48 +158,58 @@ if uploaded_file is not None:
                     st.error(f"Error en validación de Model Layer: {e}")
                 except Exception as e:
                     st.error(f"Falla crítica en el entrenamiento: {e}")
-        # --- Sección 7: Insights Estadísticos (al final) ---
+
         st.markdown("---")
-        st.header("6. Insights Estadísticos")
+        st.header("6. Insights Estadísticos de Negocio")
 
-        # Pregunta 1: ¿Qué variable aporta más información?
-        if 'target_col' in locals() and target_col and col_types["numericas"]:
-            best_var, best_score = best_variable_by_mutual_info(df, col_types["numericas"], target_col)
-            if best_var:
-                st.write(f"1) Variable que más aporta: **{best_var}** (info mutua ≈ {best_score:.4f})")
-            else:
-                st.write("1) No se pudo calcular variable con información (datos insuficientes).")
-        else:
-            st.write("1) No hay target o variables numéricas suficientes para evaluar aporte de información.")
+        with st.container(border=True):
+            st.subheader("📝 Diagnóstico Automático")
 
-        # Pregunta 2: ¿El evento es raro?
-        if 'target_col' in locals() and target_col:
             prior, rarity = event_rarity(df, target_col, target_value)
-            st.write(f"2) ¿El evento es raro? -> Probabilidad base = {prior:.4f} → **{rarity}**")
-        else:
-            st.write("2) No se ha seleccionado un target válido para evaluar rareza.")
+            st.markdown(
+                f"**1. Perfil del Evento:** La clase `{target_value}` se clasifica como **{rarity}** (Probabilidad Base: {prior:.2%}).")
 
-        # Pregunta 3: ¿Las variables parecen independientes?
-        ind = independence_by_correlation(df, col_types.get("numericas", []))
-        if ind.get('mean_abs_corr') is None:
-            st.write("3) No aplicable (menos de 2 variables numéricas).")
-        else:
-            st.write(f"3) Correlación media absoluta = {ind['mean_abs_corr']:.3f}, max = {ind['max_abs_corr']:.3f} → {ind['conclusion']}")
+            if col_types["numericas"]:
+                with st.spinner("Midiendo entropía..."):
+                    best_var, best_score = best_variable_by_mutual_info(
+                        df, col_types["numericas"], target_col)
+                if best_var:
+                    st.markdown(
+                        f"**2. Principal Predictor:** La variable que más información comparte con el objetivo es `{best_var}` (Score: {best_score:.4f}).")
+                else:
+                    st.markdown(
+                        "**2. Principal Predictor:** Datos insuficientes para calcular Información Mutua.")
 
-        # Pregunta 4: ¿Qué tan confiable es el modelo?
-        reliability = model_reliability_estimate(df, col_types.get("numericas", []), target_col if 'target_col' in locals() else None)
-        baseline = reliability.get('baseline_accuracy')
-        nb_acc = reliability.get('nb_cv_accuracy')
-        note = reliability.get('note')
-        if baseline is None and nb_acc is None:
-            st.write(f"4) Confiabilidad: No se puede estimar. {note or ''}")
-        else:
-            s = f"4) Baseline (mayoría) = {baseline:.3f}" if baseline is not None else "4) Baseline no disponible"
-            if nb_acc is not None:
-                s += f"; Estimación NaïveBayes (CV) ≈ {nb_acc:.3f}"
-            if note:
-                s += f" — {note}"
-            st.write(s)
+            ind = independence_by_correlation(
+                df, col_types.get("numericas", []))
+            st.markdown(
+                f"**3. Análisis de Independencia:** {ind['conclusion']} (Correlación absoluta media: {ind.get('mean_abs_corr', 0):.3f}).")
+
+            with st.spinner("Validando modelo (Cross-Validation)..."):
+                reliability = model_reliability_estimate(
+                    df, col_types.get("numericas", []), target_col)
+            baseline = reliability.get('baseline_accuracy')
+            nb_acc = reliability.get('nb_cv_accuracy')
+
+            if baseline and nb_acc:
+                st.markdown(
+                    f"**4. Rendimiento Esperado (CV):** El modelo alcanza un **{nb_acc:.2%}** de precisión estimada frente a un baseline del **{baseline:.2%}**.")
+            else:
+                st.markdown(
+                    f"**4. Rendimiento Esperado:** {reliability.get('note', 'No aplicable')}")
+
+        st.subheader("Exploración Avanzada (Advanced EDA)")
+        if col_types["numericas"]:
+            with st.expander("Mapa de correlaciones térmico", expanded=False):
+                fig_corr = plot_correlation_heatmap(df, col_types["numericas"])
+                if fig_corr:
+                    st.pyplot(fig_corr)
+                    plt.close(fig_corr)
+
+            with st.expander("Integridad del Dataset (Valores Faltantes)", expanded=False):
+                fig_miss = plot_missingness_bar(df)
+                st.pyplot(fig_miss)
+                plt.close(fig_miss)
 
     except DataLoadError as e:
         st.error(str(e))

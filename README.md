@@ -29,14 +29,22 @@ El proyecto está orquestado mediante una separación estricta de responsabilida
 ```text
 .
 ├── app/
-│   ├── main.py              # Orquestador de la UI (Streamlit)
-│   └── modules/
-│       ├── data_loader.py   # Pipeline de ingesta y validación
-│       ├── bayes_engine.py  # Lógica matemática y entrenamiento
-│       └── visualizer.py    # Renderizado de assets gráficos
-├── data/
-│   ├── raw/                 # Datasets originales (Ignorados en Git)
-│   └── processed/           # Datos sanitizados
-├── notebooks/               # Sandbox de experimentación
-└── requirements.txt         # Manifiesto de dependencias
+│   ├── analytics/
+│   │   └── insights.py          # Generación de insights analíticos
+│   ├── assets/                  # Recursos estáticos (imágenes, estilos, etc.)
+│   ├── data/
+│   │   └── data_loader.py       # Pipeline de ingesta y validación de datos
+│   ├── models/
+│   │   └── bayes_engine.py      # Lógica matemática y entrenamiento del modelo
+│   ├── ui/
+│   │   ├── bayes_panel.py       # Interfaz del motor bayesiano
+│   │   ├── eda_panel.py         # Interfaz de Análisis Exploratorio (EDA)
+│   │   └── insights_panel.py    # Interfaz de presentación de insights
+│   ├── visualization/
+│   │   └── visualizer.py        # Renderizado de matrices y gráficos
+│   └── main.py                  # Orquestador de la UI (Streamlit)
+├── venv/                        # Entorno virtual aislado
+├── .gitignore                   # Exclusiones de control de versiones
+├── README.md                    # Documentación principal
+└── requirements.txt             # Manifiesto de dependencias
 ```
