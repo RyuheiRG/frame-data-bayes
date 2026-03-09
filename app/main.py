@@ -4,15 +4,6 @@ import matplotlib.pyplot as plt
 from modules.data_loader import load_and_validate_data, detect_column_types, DataLoadError
 from modules.bayes_engine import BayesianAnalyzer
 from modules.visualizer import plot_histogram, plot_probability_comparison, plot_confusion_matrix, plot_time_series
-from modules.insights import (
-    summary_statistics,
-    plot_correlation_heatmap,
-    plot_missingness_bar,
-    correlation_matrix,
-    top_correlated_pairs,
-    target_group_stats,
-    mutual_info_scores,
-)
 
 st.set_page_config(page_title="Bayesian Engine | Zero Trust", layout="wide")
 
@@ -74,7 +65,7 @@ if uploaded_file is not None:
                 else:
                     st.info("No se detectaron vectores de tiempo (datetime).")
 
-        st.header("4. Configuración del Objetivo (Target)")
+        st.header("3. Configuración del Objetivo (Target)")
         # Evitamos mezclar listas directamente, casteamos a set por seguridad de duplicados
         possible_targets = list(
             set(col_types["binarias"] + col_types["categoricas"]))
@@ -96,8 +87,6 @@ if uploaded_file is not None:
 
         # Instanciar el motor lógico
         engine = BayesianAnalyzer(df, target_col)
-
-        pass
 
         st.markdown("---")
         st.header("4. Motor Probabilístico (Teorema de Bayes)")
@@ -172,51 +161,6 @@ if uploaded_file is not None:
                     st.error(f"Error en validación de Model Layer: {e}")
                 except Exception as e:
                     st.error(f"Falla crítica en el entrenamiento: {e}")
-        # --- Sección 7: Insights Estadísticos (al final) ---
-        st.markdown("---")
-        st.header("6. Insights Estadísticos")
-
-        if col_types["numericas"]:
-            with st.expander("Resumen descriptivo de variables numéricas", expanded=False):
-                desc = summary_statistics(df, col_types["numericas"])
-                st.dataframe(desc)
-
-            with st.expander("Mapa de correlaciones (numéricas)", expanded=False):
-                fig_corr = plot_correlation_heatmap(df, col_types["numericas"]) 
-                if fig_corr:
-                    st.pyplot(fig_corr)
-                    plt.close(fig_corr)
-
-            with st.expander("Valores faltantes (top columns)", expanded=False):
-                fig_miss = plot_missingness_bar(df)
-                st.pyplot(fig_miss)
-                plt.close(fig_miss)
-
-            with st.expander("Top correlaciones absolutas", expanded=False):
-                corr_mat = correlation_matrix(df, col_types["numericas"]) 
-                top_corr = top_correlated_pairs(corr_mat, n=15)
-                st.table(top_corr)
-        else:
-            st.info("No hay variables numéricas detectadas para generar insights generales.")
-
-        with st.expander("Insights vs Target (estadísticas por clase e importancia)", expanded=False):
-            if 'target_col' in locals() and target_col:
-                if col_types["numericas"]:
-                    tg = target_group_stats(df, col_types["numericas"], target_col)
-                    if not tg.empty:
-                        st.subheader("Estadísticas por clase (media, std, count)")
-                        st.dataframe(tg)
-
-                    st.subheader("Top Features por Mutual Information")
-                    mi = mutual_info_scores(df, col_types["numericas"], target_col)
-                    if not mi.empty:
-                        st.table(mi.head(15))
-                    else:
-                        st.info("No hay suficiente información para calcular scores de información mutua.")
-                else:
-                    st.info("No hay variables numéricas detectadas para calcular insights vs target.")
-            else:
-                st.info("No se ha seleccionado un target válido para calcular insights por clase.")
 
     except DataLoadError as e:
         st.error(str(e))
