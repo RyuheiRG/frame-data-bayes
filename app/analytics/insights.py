@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 import streamlit as st
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.naive_bayes import GaussianNB
@@ -45,31 +43,6 @@ def top_correlated_pairs(corr: pd.DataFrame, n: int = 10) -> pd.DataFrame:
             pairs.append((cols[i], cols[j], float(corr_abs.iloc[i, j])))
     pairs.sort(key=lambda x: -x[2])
     return pd.DataFrame(pairs[:n], columns=['feature_a', 'feature_b', 'abs_corr'])
-
-
-def plot_correlation_heatmap(df: pd.DataFrame, numeric_cols: list, method: str = 'pearson'):
-    if not numeric_cols:
-        return None
-    corr = correlation_matrix(df, numeric_cols, method)
-    fig, ax = plt.subplots(figsize=(8, 6))
-    sns.heatmap(corr, annot=False, cmap='coolwarm',
-                ax=ax, cbar_kws={'shrink': .6})
-    ax.set_title(f"Mapa de Correlaciones ({method})")
-    plt.tight_layout()
-    return fig
-
-
-def plot_missingness_bar(df: pd.DataFrame):
-    miss = missingness_summary(df)
-    fig, ax = plt.subplots(figsize=(8, 4))
-    miss_sorted = miss.sort_values('missing_pct', ascending=False).head(30)
-    ax.bar(miss_sorted.index.astype(str),
-           miss_sorted['missing_pct'], color='#E53935')
-    ax.set_ylabel('Porcentaje faltante')
-    ax.set_xticklabels(miss_sorted.index.astype(str), rotation=45, ha='right')
-    ax.set_title('Valores faltantes por columna (top 30)')
-    plt.tight_layout()
-    return fig
 
 
 @st.cache_data(show_spinner=False)

@@ -3,6 +3,8 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 import textwrap
+import seaborn as sns
+from analytics.insights import correlation_matrix, missingness_summary
 
 
 def plot_histogram(df: pd.DataFrame, column: str):
@@ -11,7 +13,6 @@ def plot_histogram(df: pd.DataFrame, column: str):
             f"Vulnerabilidad: La columna {column} no es numérica.")
 
     fig, ax = plt.subplots(figsize=(8, 4))
-    # Eliminamos el overhead de KDE en datasets enormes para evitar tirones
     plot_kde = len(df[column].dropna()) < 5000
 
     sns.histplot(data=df, x=column, kde=plot_kde,
@@ -74,7 +75,6 @@ def plot_time_series(df: pd.DataFrame, date_col: str, feature_col: str):
     df_sorted = df.dropna(
         subset=[date_col, feature_col]).sort_values(by=date_col)
 
-    # MITIGACIÓN DE PERFORMANCE: Downsampling para Series de Tiempo gigantes
     MAX_POINTS_UI = 2000
     if len(df_sorted) > MAX_POINTS_UI:
         step = len(df_sorted) // MAX_POINTS_UI
@@ -87,5 +87,33 @@ def plot_time_series(df: pd.DataFrame, date_col: str, feature_col: str):
     sns.lineplot(data=df_sorted, x=date_col, y=feature_col,
                  ax=ax, color="#FF9800", linewidth=1.5)
     plt.xticks(rotation=45)
+    plt.tight_layout()
+    return fig
+
+
+def plot_correlation_heatmap(df: pd.DataFrame, numeric_cols: list, method: str = 'pearson'):
+    if not numeric_cols:
+        return None
+
+    corr = correlation_matrix(df, numeric_cols, method)
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    sns.heatmap(corr, annot=False, cmap='coolwarm',
+                ax=ax, cbar_kws={'shrink': .6})
+    ax.set_title(f"Mapa de Correlaciones ({method})")
+    plt.tight_layout()
+    return fig
+
+
+def plot_missingness_bar(df: pd.DataFrame):
+    miss = missingness_summary(df)
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    miss_sorted = miss.sort_values('missing_pct', ascending=False).head(30)
+    ax.bar(miss_sorted.index.astype(str),
+           miss_sorted['missing_pct'], color='#E53935')
+    ax.set_ylabel('Porcentaje faltante')
+    ax.set_xticklabels(miss_sorted.index.astype(str), rotation=45, ha='right')
+    ax.set_title('Valores faltantes por columna (top 30)')
     plt.tight_layout()
     return fig

@@ -2,7 +2,6 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import confusion_matrix, accuracy_score
-import numpy as np
 
 
 class BayesianAnalyzer:
@@ -14,7 +13,6 @@ class BayesianAnalyzer:
         self.df = df.copy()
         self.target_col = target_col
         self.random_state = random_state
-        # var_smoothing ayuda al problema de Laplace en GaussianNB (estabilidad matemática)
         self.model = GaussianNB(var_smoothing=1e-9)
 
     def calculate_prior(self, target_value) -> float:
@@ -36,7 +34,7 @@ class BayesianAnalyzer:
         return evidence_matches / total_target
 
     def apply_bayes_theorem(self, prior_a: float, prob_b_given_a: float, prob_b: float) -> float:
-        if prob_b <= 0.0:  # Prevención de división por cero y probabilidades negativas
+        if prob_b <= 0.0:
             return 0.0
         return (prob_b_given_a * prior_a) / prob_b
 
@@ -50,21 +48,18 @@ class BayesianAnalyzer:
                     raise ValueError(
                         f"Feature '{col}' debe ser estrictamente numérica.")
 
-        # Si la coerción generó NaNs, no podemos pasarlos a GaussianNB
         if Xp.isna().any().any():
             raise ValueError(
                 "Datos numéricos corruptos (NaNs) detectados después de forzar el tipado.")
         return Xp
 
     def train_naive_bayes(self, feature_cols: list):
-        # Limpieza estricta de variables implicadas
         df_clean = self.df.dropna(subset=feature_cols + [self.target_col])
 
         if len(df_clean) < 10:
             raise ValueError(
                 "El dataset colapsó a <10 filas al purgar valores nulos en las features seleccionadas.")
 
-        # FIX: Evitar el crasheo de train_test_split si el target filtrado solo tiene 1 clase
         if df_clean[self.target_col].nunique() < 2:
             raise ValueError(
                 "Tras la limpieza, el target solo tiene una clase. No se puede aplicar clasificación binaria/multiclase (Varianza Cero).")
@@ -84,7 +79,6 @@ class BayesianAnalyzer:
         cm = confusion_matrix(y_test, y_pred)
         acc = accuracy_score(y_test, y_pred)
 
-        # Cálculo seguro de métricas (soporte para binario real)
         if cm.shape == (2, 2):
             tn, fp, fn, tp = cm.ravel()
             sensibilidad = tp / (tp + fn) if (tp + fn) > 0 else 0.0

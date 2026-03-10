@@ -12,9 +12,7 @@ def sanitize_column_names(df: pd.DataFrame) -> pd.DataFrame:
     """
     safe_cols = []
     for c in df.columns:
-        # Limpia caracteres de inyección CSV clásicos al inicio
         cleaned = re.sub(r'^[=+\-@\t\r\n]+', '', str(c)).strip()
-        # Si la columna queda vacía por ser puro símbolo, asignamos nombre genérico
         safe_cols.append(cleaned if cleaned else "col_anonima")
 
     df.columns = safe_cols
@@ -31,7 +29,6 @@ def is_binary_column(series: pd.Series) -> bool:
     clean_series = series.dropna()
     vals = set([str(x).strip().lower() for x in clean_series.unique()])
 
-    # Regla de Oro: Un vector binario TIENE que tener exactamente 2 estados únicos
     if len(vals) != 2:
         return False
 
@@ -54,7 +51,6 @@ def load_and_validate_data(filepath, max_rows=200_000, encoding=("utf-8", "latin
 
     for enc in encoding:
         try:
-            # OPTIMIZACIÓN: Leemos max_rows + 1. Si llega al +1, sabemos que excedió el límite.
             df = pd.read_csv(filepath, encoding=enc, nrows=max_rows + 1)
             break
         except Exception as e:
