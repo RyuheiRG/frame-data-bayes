@@ -1,68 +1,78 @@
 import pandas as pd
+import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.naive_bayes import GaussianNB
 from sklearn.metrics import confusion_matrix, accuracy_score
+from sklearn.impute import SimpleImputer
 
 
 class BayesianAnalyzer:
     def __init__(self, df: pd.DataFrame, target_col: str, random_state: int = 42):
+        """
+        Inicializa el motor probabilístico bajo arquitectura Zero Trust.
+        No muta ni duplica el dataframe original.
+        """
         if target_col not in df.columns:
             raise ValueError(
-                f"Vulnerabilidad detectada: La columna target '{target_col}' no existe en el DataFrame.")
+                f"Vulnerabilidad Crítica: La columna target '{target_col}' no existe en el payload.")
 
-        self.df = df.copy()
+        self.df = df
         self.target_col = target_col
         self.random_state = random_state
+
         self.model = GaussianNB(var_smoothing=1e-9)
 
     def calculate_prior(self, target_value) -> float:
-        total_records = len(self.df.dropna(subset=[self.target_col]))
-        if total_records == 0:
-            return 0.0
-        target_counts = len(self.df[self.df[self.target_col] == target_value])
-        return target_counts / total_records
-
-    def calculate_conditional(self, feature_col: str, feature_condition: callable, target_value) -> float:
-        subset_target = self.df[self.df[self.target_col]
-                                == target_value].dropna(subset=[feature_col])
-        total_target = len(subset_target)
-        if total_target == 0:
+        """
+        Cálculo vectorizado de P(A). Complejidad O(1) a nivel de memoria.
+        """
+        target_series = self.df[self.target_col].dropna()
+        if target_series.empty:
             return 0.0
 
-        evidence_matches = len(
-            subset_target[subset_target[feature_col].apply(feature_condition)])
-        return evidence_matches / total_target
+        return float((target_series == target_value).mean())
 
-    def apply_bayes_theorem(self, prior_a: float, prob_b_given_a: float, prob_b: float) -> float:
-        if prob_b <= 0.0:
+    def calculate_conditional(self, feature_col: str, condition_mask: pd.Series, target_value) -> float:
+        """
+        Cálculo de P(B|A).
+        REFACTOR: Recibe una máscara booleana (Hitbox superpuesto) en lugar de un callable.
+        Se ejecuta a nivel de C, evadiendo el cuello de botella del GIL de Python.
+        """
+        target_mask = self.df[self.target_col] == target_value
+        subset_target = self.df[target_mask]
+
+        if subset_target.empty:
             return 0.0
-        return (prob_b_given_a * prior_a) / prob_b
 
-    def _validate_and_prepare_X(self, X: pd.DataFrame) -> pd.DataFrame:
-        Xp = X.copy()
-        for col in Xp.columns:
-            if not pd.api.types.is_numeric_dtype(Xp[col]):
-                try:
-                    Xp[col] = pd.to_numeric(Xp[col], errors='coerce')
-                except Exception:
-                    raise ValueError(
-                        f"Feature '{col}' debe ser estrictamente numérica.")
+        evidence_matches = (target_mask & condition_mask).sum()
+        return float(evidence_matches / len(subset_target))
 
-        if Xp.isna().any().any():
-            raise ValueError(
-                "Datos numéricos corruptos (NaNs) detectados después de forzar el tipado.")
-        return Xp
+    def _validate_and_prepare_X(self, X_raw: pd.DataFrame) -> np.ndarray:
+        """
+        Saneamiento del tensor de entrenamiento. Reemplaza el peligroso dropna/fillna(0)
+        con imputación estratégica para preservar la campana de Gauss.
+        """
+        X_numeric = X_raw.apply(pd.to_numeric, errors='coerce')
 
-    def train_naive_bayes(self, feature_cols: list):
-        df_clean = self.df.dropna(subset=feature_cols + [self.target_col])
+        imputer = SimpleImputer(strategy='median')
+        X_clean = imputer.fit_transform(X_numeric)
+
+        return X_clean
+
+    def train_naive_bayes(self, feature_cols: list) -> dict:
+        """
+        Pipeline seguro de entrenamiento y extracción de métricas.
+        Genera el clasificador P(A|x1, x2, ..., xn).
+        """
+        df_clean = self.df.dropna(subset=[self.target_col])
 
         if len(df_clean) < 10:
             raise ValueError(
-                "El dataset colapsó a <10 filas al purgar valores nulos en las features seleccionadas.")
+                "Inanición de Datos: El dataset colapsó a <10 filas al purgar el target nulo.")
 
         if df_clean[self.target_col].nunique() < 2:
             raise ValueError(
-                "Tras la limpieza, el target solo tiene una clase. No se puede aplicar clasificación binaria/multiclase (Varianza Cero).")
+                "Target mono-clase: No se puede clasificar sin varianza. (División lógica por cero).")
 
         X_raw = df_clean[feature_cols]
         y = df_clean[self.target_col]

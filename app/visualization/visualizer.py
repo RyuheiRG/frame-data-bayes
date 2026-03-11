@@ -1,31 +1,41 @@
-import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
+from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
 import seaborn as sns
 import pandas as pd
 import numpy as np
 import textwrap
-import seaborn as sns
+
 from analytics.insights import correlation_matrix, missingness_summary
 
 
-def plot_histogram(df: pd.DataFrame, column: str):
+def plot_histogram(df: pd.DataFrame, column: str) -> Figure:
     if not pd.api.types.is_numeric_dtype(df[column]):
         raise ValueError(
             f"Vulnerabilidad: La columna {column} no es numérica.")
 
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig = Figure(figsize=(8, 4))
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+
     plot_kde = len(df[column].dropna()) < 5000
 
     sns.histplot(data=df, x=column, kde=plot_kde,
                  ax=ax, color="#4CAF50", bins='auto')
+
     ax.set_title(f"Distribución de Densidad: {column}")
     ax.set_ylabel("Frecuencia")
-    plt.tight_layout()
+    fig.tight_layout()
+
     return fig
 
 
-def plot_probability_comparison(prior: float, posterior: float, target_name: str):
-    fig, ax = plt.subplots(figsize=(6, 4))
-    labels = [f'Prior Base', f'Posterior (Con Evidencia)']
+def plot_probability_comparison(prior: float, posterior: float, target_name: str) -> Figure:
+    fig = Figure(figsize=(6, 4))
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+
+    labels = ['Prior Base', 'Posterior (Con Evidencia)']
     values = [prior, posterior]
 
     bars = ax.bar(labels, values, color=['#757575', '#1976D2'])
@@ -38,12 +48,14 @@ def plot_probability_comparison(prior: float, posterior: float, target_name: str
         ax.text(bar.get_x() + bar.get_width()/2, yval + 0.02,
                 f"{yval:.4f}", ha='center', va='bottom', fontweight='bold')
 
-    plt.tight_layout()
+    fig.tight_layout()
     return fig
 
 
-def plot_confusion_matrix(cm: np.ndarray, classes: list = None):
-    fig, ax = plt.subplots(figsize=(8, 6))
+def plot_confusion_matrix(cm: np.ndarray, classes: list = None) -> Figure:
+    fig = Figure(figsize=(8, 6))
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
 
     if classes is None:
         classes = ["Negativo", "Positivo"]
@@ -58,20 +70,28 @@ def plot_confusion_matrix(cm: np.ndarray, classes: list = None):
     ax.set_xlabel('Predicción del Modelo', fontweight='bold')
     ax.set_title('Matriz de Confusión (Naïve Bayes)', pad=20)
 
-    plt.xticks(rotation=45, ha='right')
-    plt.yticks(rotation=0)
-    plt.tight_layout()
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(45)
+        tick.set_ha('right')
+
+    for tick in ax.get_yticklabels():
+        tick.set_rotation(0)
+
+    fig.tight_layout()
     return fig
 
 
-def plot_time_series(df: pd.DataFrame, date_col: str, feature_col: str):
+def plot_time_series(df: pd.DataFrame, date_col: str, feature_col: str) -> Figure:
     if not pd.api.types.is_datetime64_any_dtype(df[date_col]):
         return None
     if not pd.api.types.is_numeric_dtype(df[feature_col]):
         raise ValueError(
             f"La variable a graficar ({feature_col}) debe ser numérica.")
 
-    fig, ax = plt.subplots(figsize=(10, 4))
+    fig = Figure(figsize=(10, 4))
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+
     df_sorted = df.dropna(
         subset=[date_col, feature_col]).sort_values(by=date_col)
 
@@ -86,34 +106,48 @@ def plot_time_series(df: pd.DataFrame, date_col: str, feature_col: str):
 
     sns.lineplot(data=df_sorted, x=date_col, y=feature_col,
                  ax=ax, color="#FF9800", linewidth=1.5)
-    plt.xticks(rotation=45)
-    plt.tight_layout()
+
+    for tick in ax.get_xticklabels():
+        tick.set_rotation(45)
+
+    fig.tight_layout()
     return fig
 
 
-def plot_correlation_heatmap(df: pd.DataFrame, numeric_cols: list, method: str = 'pearson'):
+def plot_correlation_heatmap(df: pd.DataFrame, numeric_cols: list, method: str = 'pearson') -> Figure:
     if not numeric_cols:
         return None
 
     corr = correlation_matrix(df, numeric_cols, method)
 
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig = Figure(figsize=(8, 6))
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+
     sns.heatmap(corr, annot=False, cmap='coolwarm',
                 ax=ax, cbar_kws={'shrink': .6})
     ax.set_title(f"Mapa de Correlaciones ({method})")
-    plt.tight_layout()
+
+    fig.tight_layout()
     return fig
 
 
-def plot_missingness_bar(df: pd.DataFrame):
+def plot_missingness_bar(df: pd.DataFrame) -> Figure:
     miss = missingness_summary(df)
 
-    fig, ax = plt.subplots(figsize=(8, 4))
+    fig = Figure(figsize=(8, 4))
+    canvas = FigureCanvas(fig)
+    ax = fig.add_subplot(111)
+
     miss_sorted = miss.sort_values('missing_pct', ascending=False).head(30)
-    ax.bar(miss_sorted.index.astype(str),
-           miss_sorted['missing_pct'], color='#E53935')
+
+    x_pos = np.arange(len(miss_sorted))
+    ax.bar(x_pos, miss_sorted['missing_pct'], color='#E53935')
+
     ax.set_ylabel('Porcentaje faltante')
+    ax.set_xticks(x_pos)
     ax.set_xticklabels(miss_sorted.index.astype(str), rotation=45, ha='right')
     ax.set_title('Valores faltantes por columna (top 30)')
-    plt.tight_layout()
+
+    fig.tight_layout()
     return fig
