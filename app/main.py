@@ -7,54 +7,50 @@ from ui.eda_panel import render_eda
 from ui.bayes_panel import render_bayes_engine
 from ui.insights_panel import render_insights
 
-st.set_page_config(
-    page_title="Bayesian Engine | Zero Trust",
-    layout="wide",
-    page_icon="🛡️"
-)
+st.set_page_config(page_title="Bayesian Engine | Zero Trust",
+                   layout="wide", page_icon="🛡️")
 
 
 @st.cache_data(show_spinner="Desencriptando e ingiriendo payload...", ttl=3600)
 def cached_load_data(raw_bytes: bytes) -> pd.DataFrame:
-    """Aísla la lectura del archivo. Falla rápido si el payload IO es inválido."""
     return load_and_validate_data(io.BytesIO(raw_bytes))
 
 
+def nuke_session_state():
+    """Callback de ejecución inmediata cuando cambia el input file."""
+    st.session_state.clear()
+
+
 def main():
+
     st.title("🛡️ Motor de Inferencia Bayesiana")
     st.markdown("---")
 
     with st.sidebar:
         st.header("1. Ingesta de Datos")
-        uploaded_file = st.file_uploader("Cargar dataset (CSV)", type=["csv"])
 
-        if st.button("Limpiar Memoria de Sesión", type="primary"):
-            st.session_state.clear()
-            st.rerun()
+        uploaded_file = st.file_uploader(
+            "Cargar dataset (CSV)",
+            type=["csv"],
+            on_change=nuke_session_state
+        )
 
     if uploaded_file is not None:
         try:
             raw_bytes = uploaded_file.getvalue()
-
             df = cached_load_data(raw_bytes)
 
             st.sidebar.success(
                 f"CSV montado en memoria: {df.shape[0]} filas, {df.shape[1]} dims.")
-
             col_types = detect_column_types(df)
 
-            tab1, tab2, tab3 = st.tabs([
-                "📊 Exploración (EDA)",
-                "🧠 Motor Bayes",
-                "💡 Insights Estratégicos"
-            ])
+            tab1, tab2, tab3 = st.tabs(
+                ["📊 Exploración (EDA)", "🧠 Motor Bayes", "💡 Insights Estratégicos"])
 
             with tab1:
                 render_eda(df, col_types)
-
             with tab2:
                 render_bayes_engine(df, col_types)
-
             with tab3:
                 render_insights(df, col_types)
 

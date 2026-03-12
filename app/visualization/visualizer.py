@@ -142,7 +142,7 @@ def plot_missingness_bar(df: pd.DataFrame) -> Figure:
     miss_sorted = miss.sort_values('missing_pct', ascending=False).head(30)
 
     x_pos = np.arange(len(miss_sorted))
-    ax.bar(x_pos, miss_sorted['missing_pct'], color='#E53935')
+    ax.bar(x_pos, miss_sorted['missing_pct'], color="#D70400")
 
     ax.set_ylabel('Porcentaje faltante')
     ax.set_xticks(x_pos)
