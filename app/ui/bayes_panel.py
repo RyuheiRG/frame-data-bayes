@@ -1,9 +1,20 @@
+import pandas as pd
 import streamlit as st
+import numpy as np
+from typing import Dict, List
+
 from models.bayes_engine import BayesianAnalyzer
 from visualization.visualizer import plot_probability_comparison, plot_confusion_matrix
 
 
-def render_bayes_engine(df, col_types):
+def _purge_dependent_state():
+    keys_to_purge = ['target_value', 'model_metrics']
+    for key in keys_to_purge:
+        if key in st.session_state:
+            del st.session_state[key]
+
+
+def render_bayes_engine(df: pd.DataFrame, col_types: Dict[str, List[str]]):
     st.header("3. Configuración del Objetivo (Target)")
 
     possible_targets = list(
@@ -17,21 +28,21 @@ def render_bayes_engine(df, col_types):
     col1, col2 = st.columns(2)
     with col1:
         target_col = st.selectbox(
-            "Selecciona la Variable Objetivo (A)", possible_targets)
+            "Selecciona la Variable Objetivo (A)",
+            possible_targets,
+            key="target_col",
+            on_change=_purge_dependent_state
+        )
     with col2:
         classes_sorted = sorted(
             df[target_col].dropna().unique(), key=lambda x: str(x))
         target_value = st.selectbox(
-            "Selecciona la clase positiva (Evento Anómalo)", classes_sorted)
+            "Selecciona la clase positiva (Evento Anómalo)",
+            classes_sorted,
+            key="target_value"
+        )
 
-    st.session_state['target_col'] = target_col
-    st.session_state['target_value'] = target_value
-
-    if 'bayes_engine' not in st.session_state or st.session_state.get('last_target') != target_col:
-        st.session_state['bayes_engine'] = BayesianAnalyzer(df, target_col)
-        st.session_state['last_target'] = target_col
-
-    engine = st.session_state['bayes_engine']
+    engine = BayesianAnalyzer(df, target_col)
 
     st.markdown("---")
     st.header("4. Motor Probabilístico (Teorema de Bayes)")
@@ -51,25 +62,19 @@ def render_bayes_engine(df, col_types):
         evidence_col = st.selectbox(
             "Selecciona Variable de Evidencia (B)", col_types["numericas"])
     with col_ev2:
-        mean_val = float(df[evidence_col].mean()
-                         ) if not df[evidence_col].empty else 0.0
-        umbral = st.number_input(f"Umbral: {evidence_col} > X", value=mean_val)
+        raw_mean = df[evidence_col].mean()
+        safe_mean = float(raw_mean) if not np.isnan(raw_mean) else 0.0
+        umbral = st.number_input(
+            f"Umbral: {evidence_col} > X", value=safe_mean)
 
     condition_mask = df[evidence_col] > umbral
-
     prob_b_given_a = engine.calculate_conditional(
         evidence_col, condition_mask, target_value)
 
     total_b_subset = df[condition_mask]
     prob_b = len(total_b_subset) / len(df) if not df.empty else 0.0
 
-    try:
-        if prob_b > 0:
-            posterior = (prob_b_given_a * prior_a) / prob_b
-        else:
-            posterior = 0.0
-    except ZeroDivisionError:
-        posterior = 0.0
+    posterior = (prob_b_given_a * prior_a) / prob_b if prob_b > 0 else 0.0
 
     st.latex(r"P(A \mid B) = \frac{P(B \mid A) \cdot P(A)}{P(B)}")
 
@@ -77,8 +82,8 @@ def render_bayes_engine(df, col_types):
     res1.metric(label="P(B | A) [Sensibilidad Evidencia]",
                 value=f"{prob_b_given_a:.4f}")
     res2.metric(label="P(B) [Probabilidad Evidencia]", value=f"{prob_b:.4f}")
-    res3.metric(label="P(A | B) [Probabilidad Posterior]", value=f"{posterior:.4f}",
-                delta=f"{(posterior - prior_a):.4f} respecto a Prior")
+    res3.metric(label="P(A | B) [Probabilidad Posterior]",
+                value=f"{posterior:.4f}", delta=f"{(posterior - prior_a):.4f} vs Prior")
 
     fig_bayes = plot_probability_comparison(
         prior_a, posterior, str(target_value))
@@ -103,27 +108,30 @@ def render_bayes_engine(df, col_types):
 
         if st.button("Ejecutar Entrenamiento y Extraer Métricas", type="primary"):
             if not features:
-                st.warning("Debes seleccionar al menos un vector predictivo.")
+                st.warning(
+                    "Hitbox Fallido: Debes seleccionar al menos un vector predictivo.")
             else:
                 try:
                     with st.spinner("Entrenando clasificador Gaussiano..."):
                         metrics = engine.train_naive_bayes(features)
-
-                    m1, m2, m3 = st.columns(3)
-                    m1.metric("Accuracy global", f"{metrics['accuracy']:.4f}")
-                    m2.metric("Sensibilidad (Recall)",
-                              f"{metrics['sensibilidad']}")
-                    m3.metric("Especificidad", f"{metrics['especificidad']}")
-
-                    st.subheader("Matriz de Confusión")
-                    classes_labels = [str(c)
-                                      for c in metrics['clases_detectadas']]
-
-                    fig_cm = plot_confusion_matrix(
-                        metrics['matriz_confusion'], classes=classes_labels)
-                    st.pyplot(fig_cm, clear_figure=True)
-
+                        st.session_state['model_metrics'] = metrics
                 except ValueError as e:
                     st.error(f"Error de Integridad (Model Layer): {e}")
                 except Exception as e:
-                    st.error(f"Excepción No Controlada: {e}")
+                    st.error(f"Excepción No Controlada (System Halt): {e}")
+
+        if 'model_metrics' in st.session_state:
+            metrics = st.session_state['model_metrics']
+
+            st.success("Modelo entrenado y métricas retenidas en memoria.")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Accuracy global", f"{metrics['accuracy']:.4f}")
+            m2.metric("Sensibilidad (Recall)", f"{metrics['sensibilidad']}")
+            m3.metric("Especificidad", f"{metrics['especificidad']}")
+
+            st.subheader("Matriz de Confusión")
+            classes_labels = [str(c) for c in metrics['clases_detectadas']]
+
+            fig_cm = plot_confusion_matrix(
+                metrics['matriz_confusion'], classes=classes_labels)
+            st.pyplot(fig_cm, clear_figure=True)

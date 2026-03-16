@@ -6,6 +6,8 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+import logging
 
 
 def summary_statistics(df: pd.DataFrame, numeric_cols: list) -> pd.DataFrame:
@@ -42,14 +44,17 @@ def top_correlated_pairs(corr: pd.DataFrame, n: int = 10) -> pd.DataFrame:
     return pairs.nlargest(n, 'abs_corr')
 
 
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_data(show_spinner=False, max_entries=2)
 def mutual_info_scores(df_subset: pd.DataFrame, numeric_cols: list, target_col: str) -> pd.Series:
-    """Requiere que df_subset sea SÓLO las columnas necesarias para minimizar el payload del Hash."""
+    """Calcula la Ganancia de Información (MI) exigiendo tipado estricto."""
     clean = df_subset.dropna(subset=numeric_cols + [target_col])
     if clean.empty or not numeric_cols:
         return pd.Series(dtype=float)
 
-    X = clean[numeric_cols]
+    X = clean[numeric_cols].select_dtypes(include=[np.number])
+    if X.empty:
+        return pd.Series(dtype=float)
+
     y = clean[target_col]
 
     if y.dtype == 'object' or y.dtype.name == 'category':
@@ -58,8 +63,10 @@ def mutual_info_scores(df_subset: pd.DataFrame, numeric_cols: list, target_col: 
     try:
         mi = mutual_info_classif(
             X, y, discrete_features=False, random_state=42)
-        return pd.Series(mi, index=numeric_cols).sort_values(ascending=False)
-    except Exception:
+        return pd.Series(mi, index=X.columns).sort_values(ascending=False)
+    except Exception as e:
+        # Falla ruidosa en log, falla segura en UI
+        logging.error(f"Falla en Mutual Info Math: {e}")
         return pd.Series(dtype=float)
 
 
@@ -104,16 +111,16 @@ def independence_by_correlation(df: pd.DataFrame, numeric_cols: list) -> dict:
     max_abs = float(np.nanmax(vals))
 
     if mean_abs < 0.1:
-        conclusion = "Variables mayormente independientes (Correlación media muy baja)."
+        conclusion = "Variables independientes (Riesgo nulo para Naive Bayes)."
     elif mean_abs < 0.3:
-        conclusion = "Dependencia moderada entre variables."
+        conclusion = "Dependencia moderada."
     else:
-        conclusion = "Dependencia notable (Alto riesgo de multicolinealidad para Naive Bayes)."
+        conclusion = "Dependencia notable (Alto riesgo de multicolinealidad. Naive Bayes penalizará)."
 
     return {"mean_abs_corr": mean_abs, "max_abs_corr": max_abs, "conclusion": conclusion}
 
 
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_data(show_spinner=False, max_entries=2)
 def model_reliability_estimate(df_subset: pd.DataFrame, numeric_cols: list, target_col: str) -> dict:
     res = {"baseline_accuracy": None, "nb_cv_accuracy": None, "note": None}
 
@@ -124,14 +131,17 @@ def model_reliability_estimate(df_subset: pd.DataFrame, numeric_cols: list, targ
 
     y = clean[target_col]
 
-    try:
-        counts = y.value_counts(normalize=True)
-        res["baseline_accuracy"] = float(counts.iloc[0])
-    except Exception:
-        res["note"] = "Fallo al calcular Baseline."
+    counts = y.value_counts(normalize=True)
+    if counts.empty:
+        res["note"] = "Target vector vacío."
+        return res
 
-    X_raw = clean[numeric_cols].apply(pd.to_numeric, errors='coerce')
-    X = SimpleImputer(strategy='median').fit_transform(X_raw)
+    res["baseline_accuracy"] = float(counts.iloc[0])
+
+    X_raw = clean[numeric_cols].select_dtypes(include=[np.number])
+    if X_raw.empty:
+        res["note"] = "Features numéricas ausentes."
+        return res
 
     if y.dtype == 'object' or y.dtype.name == 'category':
         y_enc = LabelEncoder().fit_transform(y.astype(str))
@@ -139,15 +149,19 @@ def model_reliability_estimate(df_subset: pd.DataFrame, numeric_cols: list, targ
         y_enc = y.values
 
     if len(clean) < 10 or len(np.unique(y_enc)) < 2:
-        res["note"] = "Target mono-clase o varianza insuficiente para Cross-Validation."
+        res["note"] = "Target mono-clase o varianza insuficiente para K-Fold Cross-Validation."
         return res
 
+    pipeline = Pipeline([
+        ('imputer', SimpleImputer(strategy='median')),
+        ('classifier', GaussianNB())
+    ])
+
     try:
-        nb = GaussianNB()
         scores = cross_val_score(
-            nb, X, y_enc, cv=5, scoring='accuracy', n_jobs=1)
+            pipeline, X_raw, y_enc, cv=5, scoring='accuracy', n_jobs=1)
         res["nb_cv_accuracy"] = float(np.mean(scores))
     except Exception as e:
-        res["note"] = f"Error CV: {str(e)[:50]}..."
+        res["note"] = f"Error Matemático CV: {str(e)[:50]}..."
 
     return res
